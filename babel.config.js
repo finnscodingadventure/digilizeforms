@@ -6,6 +6,8 @@ module.exports = function (api) {
 		plugins: [
 			'@emotion/babel-plugin',
 			'babel-plugin-inline-json-import',
+			'@babel/plugin-proposal-private-property-in-object',
+			'@babel/plugin-proposal-private-methods',
 			['@quillforms/babel-plugin-makepot', {
 				output: 'languages/quillforms-js.pot',
 				headers: {
