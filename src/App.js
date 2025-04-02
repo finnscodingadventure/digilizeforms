@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { registerCoreBlocks } from '@quillforms/react-renderer-utils';
 
@@ -20,7 +20,17 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { FormsProvider } from './context/FormsContext';
 
+// Utils
+import './utils/profileRepair'; // Import the profile repair utility
+
 function App() {
+  // Log application startup
+  useEffect(() => {
+    console.log('DigilizeForms application initialized');
+    console.log('If you encounter issues with saving forms, type "fixMyProfile()" in the browser console');
+    console.log('To verify database setup, type "checkDatabase()" in the browser console');
+  }, []);
+
   return (
     <AuthProvider>
       <FormsProvider>

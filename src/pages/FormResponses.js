@@ -1,24 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForms } from '../context/FormsContext';
+import { supabase } from '../utils/supabase';
 
 const FormResponses = () => {
   const { formId } = useParams();
   const navigate = useNavigate();
-  const { getForm } = useForms();
-  const form = getForm(formId);
+  const { getFormWithResponses } = useForms();
   
+  const [form, setForm] = useState(null);
   const [responses, setResponses] = useState([]);
   const [selectedResponse, setSelectedResponse] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!form) {
-      navigate('/');
-      return;
-    }
+    const fetchFormWithResponses = async () => {
+      try {
+        setLoading(true);
+        
+        const formData = await getFormWithResponses(formId);
+        
+        if (!formData) {
+          navigate('/');
+          return;
+        }
+        
+        setForm(formData);
+        setResponses(formData.responses || []);
+        
+        if (formData.responses && formData.responses.length > 0) {
+          setSelectedResponse(formData.responses[0]);
+        }
+      } catch (err) {
+        console.error('Error fetching form responses:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
     
-    setResponses(form.responses || []);
-  }, [form, navigate]);
+    fetchFormWithResponses();
+  }, [formId, getFormWithResponses, navigate]);
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -60,15 +83,15 @@ const FormResponses = () => {
 
   // Find block information by ID
   const getBlockInfo = (blockId) => {
-    if (!form || !form.formObj || !form.formObj.blocks) return null;
-    return form.formObj.blocks.find(block => block.id === blockId);
+    if (!form || !form.form_structure || !form.form_structure.blocks) return null;
+    return form.form_structure.blocks.find(block => block.id === blockId);
   };
 
   const exportResponsesToCSV = () => {
     if (!responses.length) return;
     
     // Get all block IDs for headers
-    const blockIds = form.formObj.blocks
+    const blockIds = form.form_structure.blocks
       .filter(block => block.name !== 'welcome-screen' && block.name !== 'statement')
       .map(block => ({
         id: block.id,
@@ -82,10 +105,10 @@ const FormResponses = () => {
     
     // Add data rows
     responses.forEach(response => {
-      const answers = response.answers || {};
+      const answers = response.response_data?.answers || {};
       const row = [
         response.id,
-        formatDate(response.createdAt),
+        formatDate(response.created_at),
         ...blockIds.map(block => {
           const answer = answers[block.id];
           if (!answer) return '';
@@ -111,8 +134,12 @@ const FormResponses = () => {
     document.body.removeChild(link);
   };
   
-  if (!form) {
-    return <div>Loading...</div>;
+  if (loading) {
+    return <div className="flex justify-center items-center h-full">Loading...</div>;
+  }
+
+  if (error || !form) {
+    return <div className="text-center py-8">Error loading responses. Please try again.</div>;
   }
 
   return (
@@ -161,10 +188,10 @@ const FormResponses = () => {
                     onClick={() => viewResponse(response)}
                   >
                     <div className="text-sm mb-1">
-                      Response #{response.id.slice(-4)}
+                      Response #{typeof response.id === 'string' ? response.id.slice(-4) : response.id}
                     </div>
                     <div className="text-xs text-gray-400">
-                      {formatDate(response.createdAt)}
+                      {formatDate(response.created_at)}
                     </div>
                   </div>
                 ))}
@@ -179,11 +206,11 @@ const FormResponses = () => {
                 <>
                   <h2 className="text-xl font-semibold mb-4">Response Details</h2>
                   <div className="text-sm text-gray-400 mb-6">
-                    Submitted: {formatDate(selectedResponse.createdAt)}
+                    Submitted: {formatDate(selectedResponse.created_at)}
                   </div>
                   
                   <div className="space-y-6">
-                    {Object.entries(selectedResponse.answers || {}).map(([blockId, answer]) => {
+                    {Object.entries(selectedResponse.response_data?.answers || {}).map(([blockId, answer]) => {
                       const block = getBlockInfo(blockId);
                       if (!block) return null;
                       

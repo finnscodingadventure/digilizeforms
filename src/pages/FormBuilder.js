@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForms } from '../context/FormsContext';
+import { useAuth } from '../context/AuthContext';
 
 const FormBuilder = () => {
   const { formId } = useParams();
   const navigate = useNavigate();
   const { createForm, updateForm, getForm } = useForms();
+  const { user } = useAuth();
   
   const [formTitle, setFormTitle] = useState('');
+  const [isPublished, setIsPublished] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  
   const [blocks, setBlocks] = useState([
     {
       name: 'welcome-screen',
@@ -39,14 +46,45 @@ const FormBuilder = () => {
   // Load form data if we're editing an existing form
   useEffect(() => {
     if (formId) {
-      const form = getForm(formId);
-      if (form) {
-        setFormTitle(form.title || '');
-        setBlocks(form.formObj?.blocks || []);
-        setTheme(form.formObj?.theme || theme);
-      }
+      const fetchForm = async () => {
+        try {
+          setLoading(true);
+          const form = getForm(formId);
+          
+          if (form) {
+            console.log('Loaded form from context:', form);
+            setFormTitle(form.title || '');
+            setIsPublished(form.is_published || false);
+            
+            // Convert from database structure to editor structure
+            if (form.form_structure) {
+              setBlocks(form.form_structure.blocks || blocks);
+              setTheme(form.form_structure.theme || theme);
+            }
+          } else {
+            console.log('Form not found in context');
+          }
+        } catch (err) {
+          console.error('Error loading form:', err);
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      fetchForm();
+    } else {
+      setLoading(false);
     }
   }, [formId, getForm]);
+
+  // Confirm we have a user
+  useEffect(() => {
+    if (!loading && !user) {
+      console.error('No authenticated user found');
+      navigate('/login');
+    }
+  }, [user, loading, navigate]);
 
   const addBlock = (blockType) => {
     const newBlockId = `block-${Date.now()}`;
@@ -178,31 +216,81 @@ const FormBuilder = () => {
     setShowEditModal(false);
   };
 
-  const handleSave = () => {
-    const formObj = {
-      blocks,
-      theme,
-      settings: {
-        disableProgressBar: false,
-        disableWheelSwiping: false,
-        showQuestionsNumbers: true,
-      },
-    };
-    
-    if (formId) {
-      updateForm(formId, { 
-        title: formTitle, 
-        formObj 
-      });
-    } else {
-      const newFormId = createForm({ 
-        title: formTitle, 
-        formObj
-      });
-      navigate(`/forms/${newFormId}/edit`);
+  const handleSave = async () => {
+    if (!user) {
+      console.error('Attempt to save form without authenticated user');
+      alert('You must be logged in to save forms');
+      navigate('/login');
+      return;
     }
-    
-    alert('Form saved successfully!');
+
+    // Log user information to debug
+    console.log('Current user:', user);
+    console.log('User ID:', user.id);
+
+    if (!formTitle.trim()) {
+      alert('Please enter a form title');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+      
+      const formObj = {
+        blocks,
+        theme,
+        settings: {
+          disableProgressBar: false,
+          disableWheelSwiping: false,
+          showQuestionsNumbers: true,
+        },
+      };
+      
+      console.log('Saving form with data:', {
+        title: formTitle,
+        formObj,
+        isPublished
+      });
+      
+      if (formId) {
+        await updateForm(formId, { 
+          title: formTitle, 
+          formObj,
+          isPublished
+        });
+        alert('Form updated successfully!');
+      } else {
+        const newFormId = await createForm({ 
+          title: formTitle, 
+          formObj,
+          isPublished
+        });
+        
+        if (newFormId) {
+          alert('Form created successfully!');
+          navigate(`/forms/${newFormId}/edit`);
+        } else {
+          throw new Error('Failed to create form - no ID returned');
+        }
+      }
+    } catch (err) {
+      console.error('Error saving form:', err);
+      setError(err.message);
+      
+      // Display detailed error message
+      let errorMessage = `Error saving form: ${err.message}`;
+      
+      // Check for specific database errors
+      if (err.message.includes('foreign key constraint')) {
+        errorMessage += '\n\nThis might be because your user profile is not properly set up in the database.';
+        errorMessage += '\nPlease try logging out and signing in again, or contact support.';
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePreview = () => {
@@ -670,6 +758,10 @@ const FormBuilder = () => {
     );
   };
 
+  if (loading) {
+    return <div className="flex justify-center items-center h-full">Loading...</div>;
+  }
+
   return (
     <div className="max-w-5xl mx-auto">
       {renderEditModal()}
@@ -686,16 +778,41 @@ const FormBuilder = () => {
             onChange={(e) => setFormTitle(e.target.value)}
             placeholder="Enter form title"
           />
+          
+          <div className="mt-3 flex items-center">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={isPublished} 
+                onChange={() => setIsPublished(!isPublished)} 
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+              <span className="ml-3 text-sm font-medium text-gray-300">
+                {isPublished ? 'Published' : 'Draft'}
+              </span>
+            </label>
+          </div>
         </div>
         <div className="flex gap-3">
-          <button onClick={handleSave} className="btn">
-            Save Form
+          <button 
+            onClick={handleSave} 
+            className={`btn ${saving ? 'opacity-50 cursor-not-allowed' : ''}`} 
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save Form'}
           </button>
-          <button onClick={handlePreview} className="btn-secondary">
+          <button onClick={handlePreview} className="btn-secondary" disabled={saving}>
             Preview
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-6 p-3 bg-red-900/50 text-red-200 rounded">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Blocks Panel */}

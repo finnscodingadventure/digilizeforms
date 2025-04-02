@@ -3,12 +3,11 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
-  if (!isAuthenticated) {
-    // Redirect to login page if user is not authenticated
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
 
   return children;
