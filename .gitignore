@@ -15,6 +15,7 @@ includes/json
 phpcs.xml
 yarn.lock
 .env.local
+.env
 
 .cache
 *.tsbuildinfo
