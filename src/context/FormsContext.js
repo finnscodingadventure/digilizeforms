@@ -1,109 +1,90 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { saveFormResponseToSheet } from '../utils/googleSheets';
 import { supabase } from '../utils/supabase';
 import { useAuth } from './AuthContext';
 
 const FormsContext = createContext();
 
-export const useForms = () => useContext(FormsContext);
-
-export const FormsProvider = ({ children }) => {
+export function FormsProvider({ children }) {
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [databaseReady, setDatabaseReady] = useState(false);
   const { user } = useAuth();
 
-  // Check if database tables exist on mount
-  useEffect(() => {
-    const checkDatabase = async () => {
-      try {
-        console.log('Checking database tables...');
-        
-        // Try to select from the forms table to see if it exists
-        const { error: formsError } = await supabase
-          .from('forms')
-          .select('count')
-          .limit(1);
-          
-        // Check profiles table
-        const { error: profilesError } = await supabase
-          .from('profiles')
-          .select('count')
-          .limit(1);
-          
-        // Check form_responses table
-        const { error: responsesError } = await supabase
-          .from('form_responses')
-          .select('count')
-          .limit(1);
-          
-        if (formsError || profilesError || responsesError) {
-          console.error('Error checking database tables:');
-          if (formsError) console.error('- Forms table:', formsError);
-          if (profilesError) console.error('- Profiles table:', profilesError);
-          if (responsesError) console.error('- Form responses table:', responsesError);
-          
-          alert('Database error: Please make sure your database tables are set up correctly. Check the console for details.');
-          setDatabaseReady(false);
-        } else {
-          console.log('Database tables validated successfully');
-          setDatabaseReady(true);
-        }
-      } catch (err) {
-        console.error('Error during database check:', err);
-        setDatabaseReady(false);
-      }
-    };
+  const fetchForms = useCallback(async () => {
+    if (!user) return;
     
-    checkDatabase();
-  }, []);
-
-  // Log when user changes to help debug
-  useEffect(() => {
-    if (user) {
-      console.log('User in FormsContext:', user);
-      console.log('User ID:', user.id);
-    } else {
-      console.log('No user in FormsContext');
+    let timeoutId;
+    
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Fetching forms timed out'));
+      }, 15000);
+    });
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const fetchPromise = supabase
+        .from('forms')
+        .select('id, title, updated_at, is_published')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+        
+      const result = await Promise.race([
+        fetchPromise,
+        timeoutPromise
+      ]);
+      
+      clearTimeout(timeoutId);
+      
+      const { data, error: fetchError } = result;
+      
+      if (fetchError) {
+        console.error('Supabase fetch error:', fetchError);
+        throw fetchError;
+      }
+      
+      setForms(data || []);
+    } catch (err) {
+      console.error('Error fetching forms:', err);
+      setError(err.message || 'Failed to fetch forms');
+      setForms([]);
+    } finally {
+      setLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
-    if (!user || !databaseReady) {
-      setForms([]);
-      setLoading(false);
-      return;
-    }
-
-    // Load forms from Supabase
-    const fetchForms = async () => {
-      try {
-        setLoading(true);
-        
-        console.log('Fetching forms for user:', user.id);
-        const { data, error } = await supabase
-          .from('forms')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-        
-        if (error) {
-          throw error;
+    let isMounted = true;
+    
+    const init = async () => {
+      if (user && isMounted) {
+        console.log("FormsContext: User found, attempting initial fetch.");
+        try {
+          await fetchForms();
+          console.log("FormsContext: Initial fetch completed.");
+        } catch (err) {
+          console.error('FormsContext: Error during initial form fetch invocation:', err);
+          if (isMounted) {
+            setLoading(false);
+          }
         }
-        
-        console.log('Forms fetched:', data?.length || 0);
-        setForms(data || []);
-      } catch (err) {
-        console.error('Error fetching forms:', err);
-        setError(err.message);
-      } finally {
+      } else if (!user && isMounted) {
+        console.log("FormsContext: No user, clearing forms and setting loading to false.");
+        setForms([]);
         setLoading(false);
       }
     };
-
-    fetchForms();
-  }, [user, databaseReady]);
+    
+    init();
+    
+    return () => {
+      console.log("FormsContext: Unmounting or user changed, cleanup initiated.");
+      isMounted = false;
+    };
+  }, [user, fetchForms]);
 
   const createForm = async (formData) => {
     if (!user) {
@@ -114,7 +95,6 @@ export const FormsProvider = ({ children }) => {
     try {
       console.log('Creating form for user:', user);
       console.log('User ID:', user.id);
-      console.log('User object type:', typeof user);
       console.log('Form data:', formData);
       
       const form = {
@@ -150,7 +130,7 @@ export const FormsProvider = ({ children }) => {
     } catch (err) {
       console.error('Error creating form:', err);
       setError(err.message);
-      throw err; // Re-throw to let the component handle it
+      throw err;
     }
   };
 
@@ -180,7 +160,7 @@ export const FormsProvider = ({ children }) => {
         .from('forms')
         .update(updates)
         .eq('id', formId)
-        .eq('user_id', user.id) // Ensure user owns the form
+        .eq('user_id', user.id)
         .select();
       
       if (error) {
@@ -205,7 +185,7 @@ export const FormsProvider = ({ children }) => {
     } catch (err) {
       console.error('Error updating form:', err);
       setError(err.message);
-      throw err; // Re-throw to let the component handle it
+      throw err;
     }
   };
 
@@ -217,7 +197,7 @@ export const FormsProvider = ({ children }) => {
         .from('forms')
         .delete()
         .eq('id', formId)
-        .eq('user_id', user.id); // Ensure user owns the form
+        .eq('user_id', user.id);
       
       if (error) {
         throw error;
@@ -235,31 +215,86 @@ export const FormsProvider = ({ children }) => {
     }
   };
 
-  const getForm = (formId) => {
-    console.log('Getting form:', formId);
-    console.log('Available forms:', forms.length);
-    const form = forms.find(form => form.id === formId);
-    console.log('Found form:', form ? 'yes' : 'no');
-    return form;
-  };
+  const getForm = useCallback(async (formId) => {
+    if (!formId) {
+      console.error("getForm called with no formId");
+      return null;
+    }
+
+    console.log('FormsContext: Getting form:', formId);
+    
+    // 1. Check cache for FULL form data
+    const cachedForm = forms.find(form => form.id === formId && form.form_structure && form.settings);
+    
+    if (cachedForm) {
+      console.log('FormsContext: Found full form data in local cache:', cachedForm);
+      return cachedForm;
+    }
+    
+    console.log(`FormsContext: Full form data for ${formId} not in cache, fetching from Supabase...`);
+    
+    // 2. Fetch full form data from Supabase if not in cache or incomplete
+    try {
+      const { data, error } = await supabase
+        .from('forms')
+        .select('*, form_structure, settings') // Explicitly select all columns needed by builder
+        .eq('id', formId)
+        .maybeSingle(); // Use maybeSingle to handle null case gracefully
+      
+      if (error) {
+        console.error('FormsContext: Error fetching form from Supabase:', error);
+        // Don't throw here, let the calling component handle null
+        setError(prevError => prevError ? `${prevError}; Failed to fetch form ${formId}: ${error.message}` : `Failed to fetch form ${formId}: ${error.message}`);
+        return null; 
+      }
+      
+      if (!data) {
+        console.warn('FormsContext: Form not found in Supabase with ID:', formId);
+        // Don't set a global error, let the component decide how to handle not found
+        return null;
+      }
+      
+      console.log('FormsContext: Full form fetched from Supabase:', data);
+
+      // 3. Optional: Update the cache with the full form data
+      // This replaces the potentially incomplete cached version
+      setForms(prevForms => {
+          const existingIndex = prevForms.findIndex(f => f.id === formId);
+          if (existingIndex !== -1) {
+              // Replace existing entry
+              const updatedForms = [...prevForms];
+              updatedForms[existingIndex] = data;
+              return updatedForms;
+          } else {
+              // Add new entry (shouldn't happen often if fetchForms ran first)
+              return [...prevForms, data];
+          }
+      });
+
+      return data;
+    } catch (err) {
+      // Catch unexpected errors during fetch or cache update
+      console.error('FormsContext: Unexpected error in getForm:', err);
+      setError(prevError => prevError ? `${prevError}; Unexpected error fetching form ${formId}: ${err.message}` : `Unexpected error fetching form ${formId}: ${err.message}`);
+      return null; // Return null on unexpected errors
+    }
+  }, [forms, user]); // Depend on forms cache and user 
 
   const getFormWithResponses = async (formId) => {
     if (!user) return null;
     
     try {
-      // Get the form
       const { data: form, error: formError } = await supabase
         .from('forms')
         .select('*')
         .eq('id', formId)
-        .eq('user_id', user.id) // Ensure user owns the form
+        .eq('user_id', user.id)
         .single();
       
       if (formError) {
         throw formError;
       }
       
-      // Get the responses
       const { data: responses, error: responsesError } = await supabase
         .from('form_responses')
         .select('*')
@@ -281,30 +316,59 @@ export const FormsProvider = ({ children }) => {
     }
   };
 
-  const getPublicForm = async (formId) => {
+  const getResponseCounts = useCallback(async () => {
+    if (!user) {
+      console.warn("getResponseCounts called without a user.");
+      return {};
+    }
+    
+    console.log("getResponseCounts: Fetching counts for user:", user.id);
+    
     try {
-      const { data, error } = await supabase
-        .from('forms')
-        .select('*')
-        .eq('id', formId)
-        .eq('is_published', true) // Only fetch published forms
-        .single();
-      
-      if (error) {
-        throw error;
+      const { data, error: rpcError } = await supabase.rpc('get_form_response_counts', {
+        user_uuid: user.id
+      });
+
+      if (rpcError) {
+        console.error('Error fetching response counts via RPC:', rpcError);
+        throw rpcError;
       }
       
-      return data;
+      console.log('Raw response counts data from RPC:', data);
+
+      if (Array.isArray(data)) {
+        const countsMap = data.reduce((acc, item) => {
+          if (item && item.form_id && typeof item.response_count === 'number') {
+             acc[item.form_id] = item.response_count;
+          } else {
+             console.warn('getResponseCounts: Skipping invalid item in response counts:', item);
+          }
+          return acc;
+        }, {});
+        console.log('getResponseCounts: Processed counts map:', countsMap);
+        return countsMap;
+      } else {
+         console.warn('getResponseCounts: Unexpected format received for response counts:', data);
+         return {};
+      }
+
     } catch (err) {
-      console.error('Error fetching public form:', err);
-      setError(err.message);
-      return null;
+      console.error('Error in getResponseCounts:', err);
+      setError(prevError => prevError ? `${prevError}; Failed to get response counts: ${err.message}` : `Failed to get response counts: ${err.message}`);
+      return {};
     }
+  }, [user]);
+
+  const publishForm = async (formId) => {
+    return updateForm(formId, { isPublished: true });
+  };
+
+  const unpublishForm = async (formId) => {
+    return updateForm(formId, { isPublished: false });
   };
 
   const saveFormResponse = async (formId, responseData) => {
     try {
-      // Add the response to Supabase
       const { data, error } = await supabase
         .from('form_responses')
         .insert([
@@ -321,12 +385,10 @@ export const FormsProvider = ({ children }) => {
         throw error;
       }
       
-      // Try to save to Google Sheets (will fail gracefully if not configured)
       try {
         await saveFormResponseToSheet(formId, data);
       } catch (err) {
         console.error('Error saving to Google Sheets:', err);
-        // Continue without Google Sheets integration if there's an error
       }
       
       return data;
@@ -341,12 +403,15 @@ export const FormsProvider = ({ children }) => {
     forms,
     loading,
     error,
+    fetchForms,
     createForm,
     updateForm,
     deleteForm,
     getForm,
     getFormWithResponses,
-    getPublicForm,
+    getResponseCounts,
+    publishForm,
+    unpublishForm,
     saveFormResponse,
   };
 
@@ -355,4 +420,8 @@ export const FormsProvider = ({ children }) => {
       {children}
     </FormsContext.Provider>
   );
-}; 
+}
+
+export function useForms() {
+  return useContext(FormsContext);
+} 

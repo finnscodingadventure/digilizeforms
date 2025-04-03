@@ -18,6 +18,7 @@ This document provides instructions on how to set up the database for DigilizeFo
    - Set up Row Level Security
    - Create access policies
    - Add necessary indexes
+   - Create a trigger for automatic profile creation
 
 2. **Enable Email Authentication**
 
@@ -44,6 +45,14 @@ This document provides instructions on how to set up the database for DigilizeFo
 - **forms**: Stores all form metadata and structure
 - **form_responses**: Stores form submissions
 
+## Automatic Profile Creation
+
+When a new user signs up or is created in the Supabase auth system, a database trigger automatically creates a corresponding record in the `profiles` table. This ensures that:
+
+1. Foreign key constraints are maintained
+2. Users can immediately create forms after signup
+3. No manual profile creation is needed
+
 ## Row Level Security (RLS)
 
 The database uses Row Level Security to ensure:
@@ -63,17 +72,15 @@ You can verify the tables exist in the Supabase dashboard under Database > Table
 
 If you see an error like `"Error saving form: insert or update on table 'forms' violates foreign key constraint 'forms_user_id_fkey'"`, it means your user profile hasn't been properly created in the profiles table.
 
-This can happen because:
-1. When a user signs up, they are created in Supabase's auth system
-2. A corresponding record must also exist in the `profiles` table 
-3. The `forms` table references the `profiles` table through the `user_id` field
+This can happen if:
+1. The database trigger is not working properly
+2. You're using an account that was created before the trigger was implemented
 
 **Solutions:**
 
-1. **Use the built-in repair utility:**
-   - Open your browser console (F12 or right-click > Inspect > Console)
-   - Type `fixMyProfile()` and press Enter
-   - Try saving your form again
+1. **For accounts created before the trigger implementation:**
+   - Use the built-in repair utility by opening your browser console (F12) and typing `fixMyProfile()`
+   - Or run the SQL command shown in option 3
 
 2. **Check database setup:**
    - Open your browser console

@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForms } from '../context/FormsContext';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../utils/supabase';
+import { DocumentDuplicateIcon, ArrowLeftIcon } from '@heroicons/react/24/solid';
+import { toast } from 'react-toastify';
 
 const FormResponses = () => {
   const { formId } = useParams();
@@ -134,6 +137,16 @@ const FormResponses = () => {
     document.body.removeChild(link);
   };
   
+  const handleCopyPublicLink = () => {
+    const publicUrl = `${window.location.origin}/form/${formId}`;
+    navigator.clipboard.writeText(publicUrl).then(() => {
+      toast.success('Public form link copied to clipboard!');
+    }).catch(err => {
+      console.error('Failed to copy link: ', err);
+      toast.error('Failed to copy link.');
+    });
+  };
+
   if (loading) {
     return <div className="flex justify-center items-center h-full">Loading...</div>;
   }
@@ -164,11 +177,7 @@ const FormResponses = () => {
           <h2 className="text-xl mb-4">No responses yet</h2>
           <p className="text-gray-400 mb-6">Share your form to collect responses</p>
           <button 
-            onClick={() => {
-              const url = `${window.location.origin}/form/${formId}`;
-              navigator.clipboard.writeText(url);
-              alert('Public form link copied to clipboard!');
-            }} 
+            onClick={handleCopyPublicLink} 
             className="btn"
           >
             Copy Form Link

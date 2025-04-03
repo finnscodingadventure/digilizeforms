@@ -8,58 +8,83 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
   
-  const { login, signup } = useAuth();
+  const { login, signup, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
   const from = location.state?.from?.pathname || '/';
+  const loading = localLoading || authLoading;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    setLocalLoading(true);
     
     try {
       if (isLogin) {
         // Login flow
         if (!email || !password) {
           setError('Please enter both email and password');
+          setLocalLoading(false);
           return;
         }
         
-        console.log('Attempting login with email:', email);
+        // Set a timeout to prevent UI from being stuck if auth is taking too long
+        const timeoutId = setTimeout(() => {
+          // This will only run if login hasn't completed in 15 seconds
+          setError('Login request is taking longer than expected. You may continue to wait or try again.');
+          setLocalLoading(false);
+        }, 15000); // 15 second timeout
         
-        const success = await login(email, password);
-        
-        if (success) {
-          console.log('Login successful, redirecting to dashboard');
-          navigate('/dashboard');
-        } else {
-          setError('Invalid email or password');
+        try {
+          const success = await login(email, password);
+          clearTimeout(timeoutId);
+          
+          if (success) {
+            // Redirect but keep the loading state to avoid flickering
+            navigate('/');
+          } else {
+            setError('Invalid email or password');
+            setLocalLoading(false);
+          }
+        } catch (loginError) {
+          clearTimeout(timeoutId);
+          console.error('Error during login:', loginError);
+          setError(loginError.message || 'Login failed');
+          setLocalLoading(false);
         }
       } else {
         // Signup flow
         if (!email || !password || !name) {
           setError('Please fill out all fields');
+          setLocalLoading(false);
           return;
         }
         
-        const success = await signup(email, password, name);
-        
-        if (success) {
-          // Auto login or redirect to login
-          navigate(from, { replace: true });
-        } else {
-          setError('Error creating account');
+        try {
+          const success = await signup(email, password, name);
+          
+          if (success) {
+            // Redirect to login page after successful signup
+            setIsLogin(true);
+            setPassword('');
+            setError('Account created successfully. Please sign in.');
+          } else {
+            setError('Error creating account');
+          }
+        } catch (signupError) {
+          console.error('Error during signup:', signupError);
+          setError(signupError.message || 'Signup failed');
+        } finally {
+          setLocalLoading(false);
         }
       }
     } catch (err) {
-      console.error('Auth error:', err);
-      setError(err.message || 'An error occurred');
-    } finally {
-      setLoading(false);
+      console.error('Unexpected auth error:', err);
+      setError(err.message || 'An unexpected error occurred');
+      setLocalLoading(false);
     }
   };
 
