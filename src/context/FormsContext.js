@@ -317,47 +317,34 @@ export function FormsProvider({ children }) {
   };
 
   const getResponseCounts = useCallback(async () => {
-    if (!user) {
-      console.warn("getResponseCounts called without a user.");
-      return {};
-    }
+    if (!user || forms.length === 0) return {};
     
-    console.log("getResponseCounts: Fetching counts for user:", user.id);
-    
+    const formIds = forms.map(f => f.id);
+    if (formIds.length === 0) return {};
+
     try {
-      const { data, error: rpcError } = await supabase.rpc('get_form_response_counts', {
-        user_uuid: user.id
-      });
+      const { data, error } = await supabase
+        .rpc('get_response_counts', { form_ids: formIds });
 
-      if (rpcError) {
-        console.error('Error fetching response counts via RPC:', rpcError);
-        throw rpcError;
-      }
-      
-      console.log('Raw response counts data from RPC:', data);
-
-      if (Array.isArray(data)) {
-        const countsMap = data.reduce((acc, item) => {
-          if (item && item.form_id && typeof item.response_count === 'number') {
-             acc[item.form_id] = item.response_count;
-          } else {
-             console.warn('getResponseCounts: Skipping invalid item in response counts:', item);
-          }
-          return acc;
-        }, {});
-        console.log('getResponseCounts: Processed counts map:', countsMap);
-        return countsMap;
-      } else {
-         console.warn('getResponseCounts: Unexpected format received for response counts:', data);
-         return {};
+      if (error) {
+        console.error('Error fetching response counts:', error);
+        throw error;
       }
 
+      // Supabase RPC returns an array of objects like { form_id: ..., count: ... }
+      // Convert this into an object { form_id: count }
+      const countsMap = data.reduce((acc, item) => {
+        acc[item.form_id] = item.count;
+        return acc;
+      }, {});
+
+      return countsMap;
     } catch (err) {
-      console.error('Error in getResponseCounts:', err);
-      setError(prevError => prevError ? `${prevError}; Failed to get response counts: ${err.message}` : `Failed to get response counts: ${err.message}`);
-      return {};
+      console.error('Failed to get response counts:', err);
+      setError(prev => prev ? `${prev}; Failed to get response counts` : 'Failed to get response counts');
+      return {}; // Return empty object on error
     }
-  }, [user]);
+  }, [user, forms]); // Depend on user and the list of forms
 
   const publishForm = async (formId) => {
     return updateForm(formId, { isPublished: true });
