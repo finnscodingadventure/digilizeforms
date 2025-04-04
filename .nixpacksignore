@@ -1,0 +1,5 @@
+   *.php
+   composer.*
+   phpunit*
+   phpcs*
+   *.dist
