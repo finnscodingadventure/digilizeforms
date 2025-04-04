@@ -1,0 +1,16 @@
+   [nixpacks]
+   provider = "node"
+   disable-provider-detection = true  # This forces Nixpacks to use only what we specify
+
+   [phases.setup]
+   nixPkgs = ["nodejs-18_x", "npm"]
+   cmds = ["echo 'Forcing Node.js detection'"]
+
+   [phases.install]
+   cmds = ["npm install"]
+
+   [phases.build]
+   cmds = ["npm run build"] 
+
+   [start]
+   cmd = "npx serve -s build"
