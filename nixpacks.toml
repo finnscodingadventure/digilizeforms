@@ -1,0 +1,19 @@
+# nixpacks.toml
+
+# Explicitly use the node provider
+providers = ["node"]
+
+[phases.setup]
+# Installs Node.js (version can be specified if needed, e.g., "nodejs_18")
+nixPkgs = ["nodejs_18", "npm-9_x"]
+
+[phases.install]
+cmds = ["npm ci"] # Use 'npm install' if you don't have package-lock.json
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+# Serve the static files from the 'build' directory (adjust if your output dir is different)
+# Installs 'serve' locally if not already a dependency
+cmd = "npx serve -s build -l $PORT"
