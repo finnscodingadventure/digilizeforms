@@ -16,6 +16,7 @@ phpcs.xml
 yarn.lock
 .env.local
 .env
+env
 
 .cache
 *.tsbuildinfo
